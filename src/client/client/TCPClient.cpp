@@ -3,27 +3,23 @@
 
 int main(int argc, char *argv[])
 {
-    unsigned int port = MCL::get_port(argc, argv);
+    auto parsed_data = MCL::parse_param(argc, argv);
+    unsigned int port = parsed_data.second;
+    std::string ip = parsed_data.first;
 
     if (port == 0)
     {
         std::cout << "Usage:\n\n"
-                  << "./server port\n\n"
+                  << "./server <ip> port\n\n"
+                  << "ip: IPv4 format"
                   << "port: unsigned int value, greater than 0\n";
         return 0;
     }
 
-    // Создание экземпляра TCPClient
-    MCL::TCPClient client{port};
+    MCL::TCPClient client{ip, port};
 
     client.ConnectToServer();
     client.Run();
-
-    // MCL::TCPClient client{port};
-
-    // client.ConnectToServer();
-
-    // client.RunLoop();
 
     return 0;
 }

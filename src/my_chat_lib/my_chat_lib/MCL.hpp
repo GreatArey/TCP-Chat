@@ -4,7 +4,6 @@
 #include "ftxui/dom/elements.hpp"
 #include <algorithm>
 #include <arpa/inet.h>
-#include <array>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -31,6 +30,7 @@ namespace MCL
 {
     const char abmons[12][4] = {"JAN", "FEB", "MAR", "APR", "JUN", "JUL", "AUG", "SEP", "OKT", "NOV", "DEC"};
 
+    std::pair<std::string, unsigned int> parse_param(int argc, char *argv[]);
     unsigned int get_port(int argc, char *argv[]);
 
     enum MessageTypes
@@ -88,10 +88,6 @@ namespace MCL
         struct sockaddr_in server_address
         {
         };
-
-        const char *log_filename = "log.log";
-
-        int outfd = open(log_filename, O_WRONLY | O_CLOEXEC);
 
         std::mutex outfd_mutex;
 
@@ -159,6 +155,7 @@ namespace MCL
 
         ftxui::ScreenInteractive screen = ftxui::ScreenInteractive::Fullscreen();
         ftxui::Component input_box = ftxui::Input(&message, "Type your message here");
+
         ftxui::Component send_button = ftxui::Button("Send", [&]
                                                      { SendMessage(); });
         ftxui::Component exit_button = ftxui::Button("Exit", [&]
@@ -217,7 +214,7 @@ namespace MCL
         void ExitChat();
 
     public:
-        TCPClient(unsigned int port_ = 54010);
+        TCPClient(const std::string &ip_, unsigned int port_ = 54010);
         void ConnectToServer();
         void Run()
         {

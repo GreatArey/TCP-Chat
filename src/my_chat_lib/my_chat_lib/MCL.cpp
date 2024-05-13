@@ -5,6 +5,42 @@
 
 namespace MCL
 {
+    std::pair<std::string, unsigned int> parse_param(int argc, char *argv[])
+    {
+        if (argc < 2)
+        {
+            return {"", 0};
+        }
+
+        std::string ip;
+        std::string port;
+
+        if (argc == 2)
+        {
+            ip = "0.0.0.0";
+            port = argv[1];
+        }
+        else if (argc == 3)
+        {
+            ip = argv[1];
+            port = argv[2];
+        }
+
+        std::string::const_iterator it = port.begin();
+
+        while (it != port.end() && (std::isdigit(*it) != 0))
+        {
+            ++it;
+        }
+        if (!port.empty() && it == port.end())
+        {
+            auto int_port = static_cast<unsigned int>(std::atol(port.c_str()));
+            return {ip, int_port};
+        }
+
+        return {"", 0};
+    }
+
     unsigned int get_port(int argc, char *argv[])
     {
         if (argc < 2)
@@ -12,17 +48,18 @@ namespace MCL
             return 0;
         }
 
-        std::string s{argv[1]};
-        std::string::const_iterator it = s.begin();
+        std::string port = argv[1];
 
-        while (it != s.end() && (std::isdigit(*it) != 0))
+        std::string::const_iterator it = port.begin();
+
+        while (it != port.end() && (std::isdigit(*it) != 0))
         {
             ++it;
         }
-        if (!s.empty() && it == s.end())
+        if (!port.empty() && it == port.end())
         {
-            auto port = static_cast<unsigned int>(std::atol(s.c_str()));
-            return port;
+            auto int_port = static_cast<unsigned int>(std::atol(port.c_str()));
+            return int_port;
         }
 
         return 0;
@@ -353,7 +390,7 @@ namespace MCL
         return nullptr;
     }
 
-    TCPClient::TCPClient(unsigned int port_) : server_port{port_}
+    TCPClient::TCPClient(const std::string &ip_, unsigned int port_) : server_port{port_}
     {
         nickname = get_nickname();
 
@@ -366,7 +403,20 @@ namespace MCL
 
         server_address.sin_family = AF_INET;
         server_address.sin_port = htons(server_port);
-        inet_pton(AF_INET, serverIP.c_str(), &server_address.sin_addr);
+
+        if (inet_pton(AF_INET, ip_.c_str(), &server_address.sin_addr) != 1)
+        {
+            perror("Invalid IP");
+            exit(1);
+        }
+
+        container = ftxui::CatchEvent(container, [&](const ftxui::Event &event)
+                                      {
+            if (event == ftxui::Event::Return) {
+                SendMessage();
+                return true;
+            }
+            return false; });
     }
 
     std::string TCPClient::get_nickname()
