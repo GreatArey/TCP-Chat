@@ -1,4 +1,7 @@
 #pragma once
+#include "ftxui/component/component.hpp"
+#include "ftxui/component/screen_interactive.hpp"
+#include "ftxui/dom/elements.hpp"
 #include <algorithm>
 #include <arpa/inet.h>
 #include <array>
@@ -143,20 +146,83 @@ namespace MCL
         std::string serverIP = "0.0.0.0";
         unsigned int server_port;
 
-        std::string nickname;
-
-        int sock;
         struct sockaddr_in server_address
         {
         };
+        int sock;
+        pthread_t listener_thread_id;
+
+        std::string nickname;
 
         std::string get_nickname();
         static void *start_listening(void *arg);
 
+        ftxui::ScreenInteractive screen = ftxui::ScreenInteractive::Fullscreen();
+        ftxui::Component input_box = ftxui::Input(&message, "Type your message here");
+        ftxui::Component send_button = ftxui::Button("Send", [&]
+                                                     { SendMessage(); });
+        ftxui::Component exit_button = ftxui::Button("Exit", [&]
+                                                     { ExitChat(); });
+        ftxui::Component footer = ftxui::Container::Horizontal({input_box | ftxui::border | ftxui::flex, send_button, exit_button});
+        ftxui::Component message_history = ftxui::Renderer([&]
+                                                           {
+        ftxui::Elements children;
+        for (const auto& message : messages) {
+            ftxui::Pixel empty;
+            std::string hours = (message._time.tm_hour < 10 ? "0" : "") + std::to_string(message._time.tm_hour);
+            std::string minuts = (message._time.tm_min < 10 ? "0" : "") + std::to_string(message._time.tm_min);
+            std::string time = hours + ":" + minuts; 
+
+            ftxui::Element msg;
+            switch (message._type)
+            {
+            case MessageTypes::Text:
+                msg = ftxui::window(
+                    ftxui::hbox({
+                        ftxui::text(message._from), 
+                        ftxui::separator(empty), 
+                        ftxui::text(time)}), 
+                    ftxui::hflow(ftxui::paragraphAlignJustify(message._text)));
+                break;
+            
+            case MessageTypes::ConnectAccept:
+                msg = ftxui::paragraphAlignCenter(message._from + " connected") | ftxui::bold | ftxui::color(ftxui::Color::Green);
+                break;
+            
+            case MessageTypes::Disconnect:
+                msg = ftxui::paragraphAlignCenter(message._from + " disconnected") | ftxui::bold | ftxui::color(ftxui::Color::Red);
+                break;
+
+            default:
+                break;
+            }
+
+            children.push_back(msg);
+                
+        }
+        return ftxui::vbox(std::move(children)); });
+        ftxui::Component container = ftxui::Container::Vertical({message_history | ftxui::border | ftxui::flex,
+                                                                 footer});
+        std::string message;
+        std::vector<MCL::Message> messages;
+
+        void SendMessage(std::string &message);
+        void SendMessage();
+
+        void ReceiveMessage(MCL::Message message);
+
+        void RunLoop();
+
+        void Disconnect();
+        void ExitChat();
+
     public:
         TCPClient(unsigned int port_ = 54010);
         void ConnectToServer();
-        void RunLoop();
+        void Run()
+        {
+            RunLoop();
+            screen.Loop(container);
+        }
     };
-
 } // namespace MCL

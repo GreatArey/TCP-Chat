@@ -13,4 +13,13 @@ target_include_directories(
   ${target_name}
   PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_BINARY_DIR}/_deps/ftxui-src/include/
+)
+
+target_link_libraries(
+  ${target_name}
+  PRIVATE
+    ftxui::screen
+    ftxui::dom
+    ftxui::component
 )

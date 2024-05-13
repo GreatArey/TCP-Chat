@@ -1,22 +1,5 @@
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <cstdio>
-#include <unistd.h>
 #include <my_chat_lib/MCL.hpp>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <cerrno>
-#include <strings.h>
-#include <cstdlib>
-#include <arpa/inet.h>
-#include <string>
 #include <iostream>
-
-void clear()
-{
-    // CSI[2J clears screen, CSI[H moves the cursor to top-left corner
-    std::cout << "\x1B[2J\x1B[H";
-}
 
 int main(int argc, char *argv[])
 {
@@ -30,13 +13,17 @@ int main(int argc, char *argv[])
         return 0;
     }
 
+    // Создание экземпляра TCPClient
     MCL::TCPClient client{port};
 
     client.ConnectToServer();
+    client.Run();
 
-    // clear();
+    // MCL::TCPClient client{port};
 
-    client.RunLoop();
+    // client.ConnectToServer();
+
+    // client.RunLoop();
 
     return 0;
 }

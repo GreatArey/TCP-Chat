@@ -165,12 +165,12 @@ namespace MCL
         std::cout << "СЕРВЕР:\n\tадрес: " << myIP << "\n\tномер порта: " << ntohs(server_address.sin_port) << std::endl;
     }
 
-    struct thread_data
+    struct server_thread_data
     {
         TCPServer *_server;
         int _new_sd;
 
-        thread_data(TCPServer *server, int new_sd) : _server(server), _new_sd(new_sd){};
+        server_thread_data(TCPServer *server, int new_sd) : _server{server}, _new_sd(new_sd){};
     };
 
     void TCPServer::RunLoop()
@@ -197,7 +197,6 @@ namespace MCL
             max_sd_mutex.lock();
             int activity = select(max_sd + 1, &readfds_copy, nullptr, nullptr, &select_delay);
             max_sd_mutex.unlock();
-
             if (activity < 0)
             {
                 perror("select");
@@ -237,7 +236,7 @@ namespace MCL
                 std::cout << "Новое соединение: " << new_sd << std::endl;
 
                 pthread_t thread_id;
-                thread_data td{this, new_sd};
+                server_thread_data td{this, new_sd};
                 int ret = pthread_create(&thread_id, nullptr, thread_func, reinterpret_cast<void *>(&td));
                 if (ret != 0)
                 {
@@ -284,16 +283,15 @@ namespace MCL
     void *TCPServer::thread_func(void *arg)
     {
         pthread_t id = pthread_self();
-        auto *td = reinterpret_cast<thread_data *>(arg);
+        auto *td = reinterpret_cast<server_thread_data *>(arg);
         auto *self = static_cast<TCPServer *>(td->_server);
         auto conn_fd = static_cast<intptr_t>(td->_new_sd);
         printf("thread: %ld - serving fd %ld\n", id, conn_fd);
-        // std::vector<std::string> log_args;
 
         std::string buff;
         buff.resize(256);
 
-        if (read(conn_fd, &*buff.begin(), 256) < 0)
+        if (read(conn_fd, buff.data(), 256) < 0)
         {
             perror("read");
         }
@@ -302,48 +300,39 @@ namespace MCL
 
         std::string nickname = reg_message._from;
 
-        // log_args.push_back(nickname);
-
-        // if (write_logs(LOG_CONN_TRY, log_args) != 0)
-        // {
-        //     perror("write_logs error");
-        // }
-
         if (self->check_username(nickname))
         {
-            // log_args.emplace_back("username already taken");
-            // write_logs(LOG_CONN_FAIL, log_args);
-            auto *response = new MCL::Message{MCL::MessageTypes::ConnectDecline, "", "Username already taken"};
+            auto *response = new MCL::Message{MCL::MessageTypes::ConnectDecline, nickname, "Username already taken"};
 
-            if (write(conn_fd, response, sizeof(MCL::Message)) == -1)
+            if (write(conn_fd, response->serialize().c_str(), sizeof(MCL::Message)) == -1)
             {
                 perror("write");
             }
-            // log_args.pop_back();
+
+            self->disconnect_user(conn_fd);
+
+            return nullptr;
         }
-        else
+
+        std::cout << "Connected: " << nickname << std::endl;
+
+        self->fd_to_username_mutex.lock();
+        self->fd_to_username[conn_fd] = nickname;
+        self->fd_to_username_mutex.unlock();
+
+        auto *response = new MCL::Message{MCL::MessageTypes::ConnectAccept, nickname, "Connected"};
+
+        if (write(conn_fd, response->serialize().c_str(), sizeof(MCL::Message)) == -1)
         {
-            std::cout << "Connected: " << nickname << std::endl;
-
-            // write_logs(LOG_CONN_OK, log_args);
-
-            self->fd_to_username_mutex.lock();
-            self->fd_to_username[conn_fd] = nickname;
-            self->fd_to_username_mutex.unlock();
-
-            auto *response = new MCL::Message{MCL::MessageTypes::ConnectAccept, "", ""};
-
-            if (write(conn_fd, response, sizeof(MCL::Message)) == -1)
-            {
-                perror("write");
-            }
+            perror("write");
         }
 
-        // log_args.pop_back();
+        auto resp = response->serialize();
+        self->push_message_to_clients(resp, conn_fd);
 
         for (;;)
         {
-            auto activity = read(conn_fd, &*buff.begin(), 256);
+            auto activity = read(conn_fd, buff.data(), 256);
             if (activity > 0)
             {
                 auto msg = MCL::Message::deserialize(buff);
@@ -363,51 +352,6 @@ namespace MCL
 
         return nullptr;
     }
-
-    // int write_logs(int log_mode, const std::vector<std::string> &args)
-    // {
-    //     char log_buf[LOG_BUFFER_SIZE];
-
-    //     std::time_t t = std::time(nullptr);
-    //     std::tm *now = std::localtime(&t);
-
-    //     outfd_mutex.lock();
-    //     switch (log_mode)
-    //     {
-    //     case LOG_CONN_TRY:
-    //     {
-    //         sprintf(log_buf, "%d %s %02d %02d:%02d:%02d USER \"%s\" TRIED TO CONNECT\n", now->tm_year + 1900, abmons[now->tm_mon], now->tm_mday, now->tm_hour, now->tm_min, now->tm_sec, args[0].c_str());
-    //         break;
-    //     }
-    //     case LOG_CONN_FAIL:
-    //     {
-    //         sprintf(log_buf, "%d %s %02d %02d:%02d:%02d USER \"%s\" CONNECTION FAIL : %s\n", now->tm_year + 1900, abmons[now->tm_mon], now->tm_mday, now->tm_hour, now->tm_min, now->tm_sec, args[0].c_str(), args[1].c_str());
-    //         break;
-    //     }
-    //     case LOG_CONN_OK:
-    //     {
-    //         sprintf(log_buf, "%d %s %02d %02d:%02d:%02d USER \"%s\" CONNECTION SUCCESS\n", now->tm_year + 1900, abmons[now->tm_mon], now->tm_mday, now->tm_hour, now->tm_min, now->tm_sec, args[0].c_str());
-    //         break;
-    //     }
-    //     case LOG_MESSAGE:
-    //     {
-    //         sprintf(log_buf, "%d %s %02d %02d:%02d:%02d USER \"%s\" SENT \"%s\"\n", now->tm_year + 1900, abmons[now->tm_mon], now->tm_mday, now->tm_hour, now->tm_min, now->tm_sec, args[0].c_str(), args[1].c_str());
-    //         break;
-    //     }
-    //     default:
-    //     {
-    //         sprintf(log_buf, "%d %s %02d %02d:%02d:%02d ERROR : UNKNOWN LOG MODE\n", now->tm_year + 1900, abmons[now->tm_mon], now->tm_mday, now->tm_hour, now->tm_min, now->tm_sec);
-    //         break;
-    //     }
-    //     }
-    //     if (pwrite(outfd, log_buf, strlen(log_buf), lseek(outfd, 0, SEEK_END)) == -1)
-    //     {
-    //         perror("pwrite");
-    //     }
-    //     outfd_mutex.unlock();
-
-    //     return 0;
-    // }
 
     TCPClient::TCPClient(unsigned int port_) : server_port{port_}
     {
@@ -445,7 +389,7 @@ namespace MCL
             perror("Connection error");
             exit(1);
         }
-        std::cout << "connected\n";
+        std::cout << "Connected to server\n";
 
         MCL::Message reg_message{MCL::MessageTypes::ConnectRequest, nickname, ""};
 
@@ -465,6 +409,8 @@ namespace MCL
         }
 
         reg_message = MCL::Message::deserialize(response_buff);
+
+        std::cout << reg_message << "\n";
 
         switch (reg_message._type)
         {
@@ -487,12 +433,22 @@ namespace MCL
         }
     }
 
+    struct client_thread_data
+    {
+        TCPClient *_client;
+        int _sock;
+
+        client_thread_data(TCPClient *client, int sock) : _client{client}, _sock(sock){};
+    };
+
     void *TCPClient::start_listening(void *arg)
     {
-        auto data = reinterpret_cast<intmax_t>(arg);
-        auto sock = static_cast<int>(data & 0xffff);
-        fd_set readfds;
+        auto *td = reinterpret_cast<client_thread_data *>(arg);
+        auto *self = (td->_client);
+        auto sock = (td->_sock);
+        fd_set readfds{};
         FD_SET(sock, &readfds);
+        delete td;
 
         std::string buff;
         buff.resize(256);
@@ -521,7 +477,7 @@ namespace MCL
 
                 msg._time = *now;
 
-                std::cout << msg << "\n";
+                self->ReceiveMessage(msg);
             }
         }
 
@@ -530,55 +486,87 @@ namespace MCL
 
     void TCPClient::RunLoop()
     {
-        std::cout << "\x1B[2J\x1B[H";
-
-        pthread_t thread_id;
-        int ret = pthread_create(&thread_id, nullptr, start_listening, reinterpret_cast<void *>(sock));
+        auto *td = new client_thread_data{this, sock};
+        int ret = pthread_create(&listener_thread_id, nullptr, start_listening, reinterpret_cast<void *>(td));
         if (ret != 0)
         {
             perror("pthread");
         }
+        // std::cout << "Thread started\n";
+    }
 
+    void TCPClient::SendMessage(std::string &message)
+    {
         auto *msg = new MCL::Message{};
 
-        for (;;)
+        msg->_from = nickname;
+        msg->_type = MCL::MessageTypes::Text;
+        msg->_text = message;
+
+        auto t = std::time(nullptr);
+        auto *now = std::localtime(&t);
+
+        msg->_time = *now;
+
+        if (write(sock, msg->serialize().data(), 256) < 0)
         {
-            std::string message;
-            std::getline(std::cin, message);
-            if (message == "exit")
-            {
-                msg->_type = MCL::MessageTypes::Disconnect;
-                if (write(sock, msg->serialize().data(), 256) < 0)
-                {
-                    perror("write");
-                }
-                break;
-            }
-            msg->_type = MCL::MessageTypes::Text;
-            msg->_from = "You";
-            msg->_text = message;
+            delete msg;
+            perror("write");
+        }
 
-            auto t = std::time(nullptr);
-            auto *now = std::localtime(&t);
+        delete msg;
+    }
 
-            msg->_time = *now;
+    void TCPClient::Disconnect()
+    {
+        auto *msg = new MCL::Message{};
+        msg->_from = nickname;
+        msg->_type = MCL::MessageTypes::Disconnect;
 
-            std::cout << *msg << "\n";
-
-            msg->_from = nickname;
-
-            if (write(sock, msg->serialize().data(), 256) < 0)
-            {
-                delete msg;
-                perror("write");
-            }
+        if (write(sock, msg->serialize().data(), 256) < 0)
+        {
+            perror("write");
         }
 
         delete msg;
 
-        pthread_cancel(thread_id);
+        pthread_cancel(listener_thread_id);
 
         close(sock);
+    }
+
+    void TCPClient::SendMessage()
+    {
+        // Отправка сообщения через client
+        message.erase(message.begin(), std::find_if(message.begin(), message.end(), [](int c)
+                                                    { return std::isspace(c) == 0; }));
+        if (!message.empty())
+        {
+            SendMessage(message);
+
+            Message msg{MessageTypes::Text, nickname, message};
+            auto t = std::time(nullptr);
+            auto *now = std::localtime(&t);
+            msg._time = *now;
+
+            ReceiveMessage(std::move(msg));
+            message.clear();
+        }
+    }
+
+    void TCPClient::ExitChat()
+    {
+        // Закрытие соединения и выход из чата
+        Disconnect();
+        screen.ExitLoopClosure()();
+    }
+
+    void TCPClient::ReceiveMessage(MCL::Message message)
+    {
+        // Добавление нового сообщения в историю
+        messages.push_back(std::move(message));
+        // Обновление интерфейса
+        screen.PostEvent(ftxui::Event::Custom);
     }
 
 } // namespace MCL

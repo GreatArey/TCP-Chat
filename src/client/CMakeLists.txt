@@ -15,4 +15,7 @@ target_link_libraries(
   ${target_name}
   PRIVATE
     my_chat_lib
+    ftxui::screen
+    ftxui::dom
+    ftxui::component
 )
